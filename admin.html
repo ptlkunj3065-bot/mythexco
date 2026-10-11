@@ -1,0 +1,614 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>mythex_co – Admin</title>
+
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: system-ui, sans-serif;
+    background: #eef5fd;
+    color: #16213f;
+    margin: 0;
+    padding: 20px;
+  }
+
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1, h2 { margin: 0 0 8px; }
+  .hint { color: #5d6a8a; margin: 0 0 18px; }
+
+  .box {
+    background: white;
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 8px 24px rgba(22,33,63,.1);
+    margin-bottom: 18px;
+  }
+
+  label {
+    display: block;
+    font-weight: 600;
+    margin: 12px 0 6px;
+  }
+
+  input {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #cfe0f3;
+    border-radius: 12px;
+    font-size: 1rem;
+  }
+
+  button {
+    border: 0;
+    border-radius: 12px;
+    padding: 12px 18px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: #4f93d8;
+    color: white;
+  }
+
+  button:disabled { opacity: .6; cursor: wait; }
+  button.alt { background: #16213f; }
+  button.del { background: #e0626a; padding: 7px 10px; }
+
+  .row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+
+  #preview {
+    max-width: 140px;
+    max-height: 180px;
+    object-fit: contain;
+    border-radius: 12px;
+    margin-top: 10px;
+    display: none;
+  }
+
+  .list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .it {
+    background: #f6faff;
+    border-radius: 12px;
+    padding: 8px;
+    font-size: .78rem;
+    overflow-wrap: anywhere;
+  }
+
+  .it img {
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    object-fit: cover;
+    border-radius: 8px;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  #msg, #loginMessage {
+    font-weight: 600;
+    margin-top: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .muted { color: #5d6a8a; font-size: .9rem; }
+  .hidden { display: none !important; }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <!-- ADMIN LOGIN -->
+  <section class="box" id="loginBox">
+    <h1>mythex_co Admin</h1>
+    <p class="hint">Sign in to manage your products.</p>
+
+    <form id="loginForm">
+      <label for="adminEmail">Admin email</label>
+      <input
+        type="email"
+        id="adminEmail"
+        autocomplete="username"
+        required
+      >
+
+      <label for="adminPassword">Password</label>
+      <input
+        type="password"
+        id="adminPassword"
+        autocomplete="current-password"
+        required
+      >
+
+      <div class="row">
+        <button type="submit" id="loginButton">Sign In</button>
+      </div>
+
+      <p id="loginMessage" role="status"></p>
+    </form>
+  </section>
+
+  <!-- PRODUCT MANAGER: HIDDEN UNTIL ADMIN IS VERIFIED -->
+  <main id="productManager" class="hidden">
+
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h1>Manage Products</h1>
+      <button type="button" class="alt" id="logoutButton">Sign Out</button>
+    </div>
+
+    <p class="hint">
+      Upload a product photo and add its affiliate link.
+      Saved products appear on the customer website after it is connected
+      to the same Supabase project.
+    </p>
+
+    <section class="box">
+      <h2>Add a product</h2>
+
+      <form id="productForm">
+        <label for="date">Date</label>
+        <input type="date" id="date" required>
+
+        <label for="file">Product image</label>
+        <input type="file" id="file" accept="image/*" required>
+
+        <img id="preview" alt="Selected product preview">
+
+        <label for="link">Affiliate link</label>
+        <input
+          type="url"
+          id="link"
+          placeholder="https://..."
+          required
+        >
+
+        <div class="row">
+          <button type="submit" id="addButton">Upload and Add Product</button>
+        </div>
+
+        <p id="msg" role="status"></p>
+      </form>
+    </section>
+
+    <section class="box">
+      <h2>Products on the site (<span id="count">0</span>)</h2>
+      <p class="muted">Products are loaded from your Supabase database.</p>
+      <div class="list" id="list"></div>
+    </section>
+
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  const ADMIN_UID = '707fb181-8779-4564-ad15-51265756d420';
+  const BUCKET = 'product-images';
+
+  const client = window.supabaseClient;
+
+  const $ = function (id) {
+    return document.getElementById(id);
+  };
+
+  const loginBox = $('loginBox');
+  const productManager = $('productManager');
+  const loginForm = $('loginForm');
+  const loginButton = $('loginButton');
+  const loginMessage = $('loginMessage');
+  const productForm = $('productForm');
+  const addButton = $('addButton');
+  const msg = $('msg');
+  const fileInput = $('file');
+  const preview = $('preview');
+  const productList = $('list');
+
+  let currentUser = null;
+  let selectedImage = null;
+  let products = [];
+
+  function localDate() {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
+  }
+
+  $('date').value = localDate();
+
+  function showMessage(element, message) {
+    element.textContent = message;
+  }
+
+  function showLogin() {
+    currentUser = null;
+    productManager.classList.add('hidden');
+    loginBox.classList.remove('hidden');
+  }
+
+  async function showManager(user) {
+    if (!user || user.id !== ADMIN_UID) {
+      await client.auth.signOut();
+      showLogin();
+      showMessage(loginMessage, 'This account is not authorized as admin.');
+      return;
+    }
+
+    currentUser = user;
+    loginBox.classList.add('hidden');
+    productManager.classList.remove('hidden');
+    await loadProducts();
+  }
+
+  // Sign in using Supabase Auth.
+  loginForm.addEventListener('submit', async function (event) {
+    event.preventDefault();
+
+    if (!client) {
+      showMessage(loginMessage, 'Supabase configuration could not load.');
+      return;
+    }
+
+    loginButton.disabled = true;
+    showMessage(loginMessage, 'Signing in...');
+
+    try {
+      const result = await client.auth.signInWithPassword({
+        email: $('adminEmail').value.trim(),
+        password: $('adminPassword').value
+      });
+
+      if (result.error) throw result.error;
+
+      if (!result.data.user || result.data.user.id !== ADMIN_UID) {
+        await client.auth.signOut();
+        throw new Error('This account is not authorized as admin.');
+      }
+
+      $('adminPassword').value = '';
+      showMessage(loginMessage, 'Login successful.');
+      await showManager(result.data.user);
+
+    } catch (error) {
+      showMessage(loginMessage, error.message || 'Sign in failed.');
+    } finally {
+      loginButton.disabled = false;
+    }
+  });
+
+  // Restore a valid admin session when reopening the page.
+  async function restoreSession() {
+    if (!client) {
+      showMessage(
+        loginMessage,
+        'Supabase configuration is missing or invalid. Check supabase-config.js.'
+      );
+      loginButton.disabled = true;
+      return;
+    }
+
+    try {
+      const result = await client.auth.getSession();
+
+      if (result.error) throw result.error;
+
+      const session = result.data.session;
+
+      if (session && session.user.id === ADMIN_UID) {
+        await showManager(session.user);
+      } else {
+        if (session) await client.auth.signOut();
+        showLogin();
+      }
+    } catch (error) {
+      showLogin();
+      showMessage(loginMessage, 'Session check failed: ' + error.message);
+    }
+  }
+
+  // Preview the selected image without converting it to Base64.
+  fileInput.addEventListener('change', function () {
+    selectedImage = fileInput.files[0] || null;
+
+    if (!selectedImage) {
+      preview.removeAttribute('src');
+      preview.style.display = 'none';
+      return;
+    }
+
+    if (!selectedImage.type.startsWith('image/')) {
+      selectedImage = null;
+      fileInput.value = '';
+      showMessage(msg, 'Please choose an image file.');
+      return;
+    }
+
+    if (selectedImage.size > 8 * 1024 * 1024) {
+      selectedImage = null;
+      fileInput.value = '';
+      preview.style.display = 'none';
+      showMessage(msg, 'Image must be 8 MB or smaller.');
+      return;
+    }
+
+    preview.src = URL.createObjectURL(selectedImage);
+    preview.style.display = 'block';
+    showMessage(msg, '');
+  });
+
+  function safeFileName(name) {
+    return name
+      .normalize('NFKD')
+      .replace(/[^a-zA-Z0-9._-]/g, '-')
+      .slice(-100) || 'product-image';
+  }
+
+  // Upload the image to Supabase Storage and insert its details into the table.
+  productForm.addEventListener('submit', async function (event) {
+    event.preventDefault();
+
+    if (!currentUser || currentUser.id !== ADMIN_UID) {
+      showMessage(msg, 'Please sign in with your admin account first.');
+      showLogin();
+      return;
+    }
+
+    const date = $('date').value;
+    const link = $('link').value.trim();
+    const imageFile = selectedImage;
+
+    if (!date || !imageFile || !link) {
+      showMessage(msg, 'Choose an image, date, and affiliate link.');
+      return;
+    }
+
+    try {
+      const parsedLink = new URL(link);
+
+      if (!['https:', 'http:'].includes(parsedLink.protocol)) {
+        throw new Error('Affiliate link must begin with https:// or http://');
+      }
+    } catch (error) {
+      showMessage(msg, error.message || 'Enter a valid affiliate URL.');
+      return;
+    }
+
+    addButton.disabled = true;
+    showMessage(msg, 'Uploading image...');
+
+    let uploadedPath = null;
+
+    try {
+      const filePath =
+        currentUser.id + '/' + Date.now() + '-' + safeFileName(imageFile.name);
+
+      const upload = await client.storage
+        .from(BUCKET)
+        .upload(filePath, imageFile, {
+          contentType: imageFile.type,
+          upsert: false
+        });
+
+      if (upload.error) throw upload.error;
+
+      uploadedPath = upload.data.path;
+
+      const publicResult = client.storage
+        .from(BUCKET)
+        .getPublicUrl(uploadedPath);
+
+      const imageUrl = publicResult.data.publicUrl;
+
+      showMessage(msg, 'Saving product...');
+
+      const insert = await client
+        .from('products')
+        .insert({
+          date: date,
+          image_url: imageUrl,
+          affiliate_link: link
+        })
+        .select('id, date, image_url, affiliate_link, created_at')
+        .single();
+
+      if (insert.error) throw insert.error;
+
+      products.unshift(insert.data);
+      renderProducts();
+
+      productForm.reset();
+      $('date').value = localDate();
+      selectedImage = null;
+      preview.removeAttribute('src');
+      preview.style.display = 'none';
+
+      showMessage(msg, 'Product saved online successfully!');
+
+    } catch (error) {
+      // Remove an uploaded image if saving its database record failed.
+      if (uploadedPath) {
+        await client.storage.from(BUCKET).remove([uploadedPath]);
+      }
+
+      showMessage(
+        msg,
+        'Could not save product: ' + (error.message || 'Unknown error')
+      );
+    } finally {
+      addButton.disabled = false;
+    }
+  });
+
+  async function loadProducts() {
+    if (!currentUser || currentUser.id !== ADMIN_UID) return;
+
+    showMessage(msg, 'Loading products...');
+
+    try {
+      const result = await client
+        .from('products')
+        .select('id, date, image_url, affiliate_link, created_at')
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (result.error) throw result.error;
+
+      products = result.data || [];
+      renderProducts();
+      showMessage(msg, '');
+
+    } catch (error) {
+      products = [];
+      renderProducts();
+      showMessage(
+        msg,
+        'Could not load products: ' + (error.message || 'Unknown error')
+      );
+    }
+  }
+
+  function renderProducts() {
+    $('count').textContent = products.length;
+    productList.replaceChildren();
+
+    products.forEach(function (product) {
+      const card = document.createElement('article');
+      card.className = 'it';
+
+      const img = document.createElement('img');
+      img.src = product.image_url;
+      img.alt = 'Product image';
+      img.loading = 'lazy';
+
+      const date = document.createElement('p');
+      date.textContent = product.date;
+
+      const link = document.createElement('a');
+      link.href = product.affiliate_link;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer sponsored';
+      link.textContent = 'Open affiliate link';
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'del';
+      del.textContent = 'Delete';
+
+      del.addEventListener('click', function () {
+        deleteProduct(product, del);
+      });
+
+      card.append(img, date, link, document.createElement('br'), del);
+      productList.appendChild(card);
+    });
+  }
+
+  function getStoragePath(publicUrl) {
+    try {
+      const pathname = new URL(publicUrl).pathname;
+      const marker = '/storage/v1/object/public/' + BUCKET + '/';
+      const index = pathname.indexOf(marker);
+
+      if (index === -1) return null;
+
+      return decodeURIComponent(pathname.slice(index + marker.length));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function deleteProduct(product, button) {
+    if (!currentUser || currentUser.id !== ADMIN_UID) {
+      showMessage(msg, 'Please sign in as admin.');
+      return;
+    }
+
+    if (!confirm('Delete this product from your website?')) return;
+
+    button.disabled = true;
+
+    try {
+      const result = await client
+        .from('products')
+        .delete()
+        .eq('id', product.id);
+
+      if (result.error) throw result.error;
+
+      products = products.filter(function (item) {
+        return item.id !== product.id;
+      });
+
+      renderProducts();
+
+      const path = getStoragePath(product.image_url);
+
+      if (path) {
+        const removal = await client.storage.from(BUCKET).remove([path]);
+
+        if (removal.error) {
+          showMessage(
+            msg,
+            'Product deleted, but its image could not be removed: ' +
+            removal.error.message
+          );
+          return;
+        }
+      }
+
+      showMessage(msg, 'Product deleted.');
+
+    } catch (error) {
+      showMessage(
+        msg,
+        'Could not delete product: ' + (error.message || 'Unknown error')
+      );
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  $('logoutButton').addEventListener('click', async function () {
+    $('logoutButton').disabled = true;
+
+    try {
+      const result = await client.auth.signOut();
+
+      if (result.error) throw result.error;
+
+      showLogin();
+      showMessage(loginMessage, 'You have signed out.');
+
+    } catch (error) {
+      showMessage(msg, 'Sign out failed: ' + error.message);
+    } finally {
+      $('logoutButton').disabled = false;
+    }
+  });
+
+  restoreSession();
+})();
+</script>
+
+</body>
+</html>
